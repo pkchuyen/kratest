@@ -1,0 +1,79 @@
+---
+# Create litecoin namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: litecoin
+---
+# create litecoin service account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litecoin
+  namespace: litecoin
+---
+# k8s statefulset deploy
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  namespace: litecoin
+  name: litecoin
+  labels: &litecoin-labels
+    app: litecoin
+    component: daemon
+    version: '__APP_VERSION__'
+spec:
+  selector:
+    matchLabels: *litecoin-labels
+  serviceName: litecoin
+  # decide to run one statefulset pod
+  replicas: 1
+  template:
+    metadata:
+      labels: *litecoin-labels
+    spec:
+      serviceAccountName: litecoin
+      securityContext:
+        runAsUser: 1001
+        fsGroup: 1001
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+      tolerations:
+      # pods run on preemptible nodes
+      - key: preemptible
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+      containers:
+        - name: main
+          image: pkchuyen/kratest:__APP_VERSION__
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+          - name: litecoin-data
+            mountPath: "/home/litecoin/.litecoin"
+          # define the resources requests and limit for container
+          resources:
+            requests:
+              cpu: 0.25
+              memory: 256Mi
+            limits:
+              cpu: 0.5
+              memory: 512Mi
+          readinessProbe:
+            tcpSocket:
+              port: 9333
+            initialDelaySeconds: 5
+            timeoutSeconds: 3
+            periodSeconds: 3
+  # create PV and PVC
+  volumeClaimTemplates:
+    - metadata:
+        name: litecoin-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 5Gi
